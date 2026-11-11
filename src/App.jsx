@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, collection, onSnapshot, addDoc } from 'firebase/firestore';
-import { Calendar as CalendarIcon, Plus, X, Upload } from 'lucide-react';
+import { Calendar as CalendarIcon, Plus, X, Upload, AlertCircle } from 'lucide-react';
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -28,6 +28,8 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [events, setEvents] = useState([]);
   const [showModal, setShowModal] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [collisionWarning, setCollisionWarning] = useState(false);
   const csvInputRef = useRef(null);
 
   const [formData, setFormData] = useState({
@@ -54,6 +56,25 @@ export default function App() {
     });
   }, [user]);
 
+  // 時間衝突判斷邏輯
+  const checkCollision = (newDate, newStart, newEnd, ignoreId) => {
+    const start = new Date(`${newDate}T${newStart}`);
+    const end = new Date(`${newDate}T${newEnd}`);
+    return events.some(ev => {
+      if (ev.id === ignoreId || ev.date !== newDate) return false;
+      const evStart = new Date(`${ev.date}T${ev.startTime}`);
+      const evEnd = new Date(`${ev.date}T${ev.endTime}`);
+      return (start < evEnd && end > evStart);
+    });
+  };
+
+  // 當日期或時間變動時，自動檢查撞期
+  useEffect(() => {
+    if (showModal) {
+      setCollisionWarning(checkCollision(formData.date, formData.startTime, formData.endTime, editingId));
+    }
+  }, [formData.date, formData.startTime, formData.endTime, showModal, editingId, events]);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!formData.company.trim()) return;
@@ -62,7 +83,6 @@ export default function App() {
     setFormData({ ...formData, company: '' });
   };
 
-  // Notion CSV 解析與批次匯入邏輯
   const handleCsvImport = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -149,7 +169,6 @@ export default function App() {
           <CalendarIcon className="w-6 h-6" /> 面試行事曆 MVP
         </h1>
         <div className="flex items-center gap-2">
-          {/* CSV 匯入隱藏 Input 與按鈕 */}
           <input
             type="file"
             ref={csvInputRef}
@@ -165,7 +184,7 @@ export default function App() {
           </button>
 
           <button
-            onClick={() => setShowModal(true)}
+            onClick={() => { setEditingId(null); setShowModal(true); }}
             className="bg-slate-900 text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-1.5"
           >
             <Plus className="w-4 h-4" /> 新增行程
@@ -183,72 +202,4 @@ export default function App() {
             });
 
             return (
-              <div key={day} className="border border-slate-900 rounded-xl p-3 h-28 flex flex-col justify-between">
-                <span className="font-bold text-sm">{day}</span>
-                <div className="space-y-1 overflow-y-auto">
-                  {dayEvents.map(ev => (
-                    <div key={ev.id} className="text-xs bg-slate-100 p-1 rounded font-medium truncate">
-                      {ev.startTime} {ev.company}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* 新增 Modal */}
-      {showModal && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4">
-          <form onSubmit={handleSubmit} className="bg-white border border-slate-900 rounded-2xl p-6 w-full max-w-md space-y-4">
-            <div className="flex justify-between items-center">
-              <h3 className="font-bold">新增面試行程</h3>
-              <button type="button" onClick={() => setShowModal(false)}><X className="w-5 h-5" /></button>
-            </div>
-            <div>
-              <label className="block text-xs font-bold mb-1">公司名稱</label>
-              <input
-                type="text"
-                value={formData.company}
-                onChange={e => setFormData({ ...formData, company: e.target.value })}
-                className="w-full border border-slate-300 rounded-lg p-2 text-sm"
-                placeholder="例如：Google"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-bold mb-1">日期</label>
-              <input
-                type="date"
-                value={formData.date}
-                onChange={e => setFormData({ ...formData, date: e.target.value })}
-                className="w-full border border-slate-300 rounded-lg p-2 text-sm"
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="block text-xs font-bold mb-1">開始時間</label>
-                <input
-                  type="time"
-                  value={formData.startTime}
-                  onChange={e => setFormData({ ...formData, startTime: e.target.value })}
-                  className="w-full border border-slate-300 rounded-lg p-2 text-sm"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-bold mb-1">結束時間</label>
-                <input
-                  type="time"
-                  value={formData.endTime}
-                  onChange={e => setFormData({ ...formData, endTime: e.target.value })}
-                  className="w-full border border-slate-300 rounded-lg p-2 text-sm"
-                />
-              </div>
-            </div>
-            <button type="submit" className="w-full bg-slate-900 text-white py-2 rounded-xl text-sm font-bold">儲存</button>
-          </form>
-        </div>
-      )}
-    </div>
-  );
-}
+              <div key={day} className="border border-slate-900 rounded-xl p-
