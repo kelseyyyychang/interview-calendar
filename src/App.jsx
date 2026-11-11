@@ -24,6 +24,14 @@ const getLocalDateStr = (d) => {
   return `${year}-${month}-${day}`;
 };
 
+// 時間加 1 小時輔助函式
+const addOneHour = (timeStr) => {
+  if (!timeStr || !timeStr.includes(':')) return '11:00';
+  const [h, m] = timeStr.split(':').map(Number);
+  const newH = (h + 1) % 24;
+  return `${String(newH).padStart(2, '0')}:${String(m || 0).padStart(2, '0')}`;
+};
+
 export default function App() {
   const [user, setUser] = useState(null);
   const [events, setEvents] = useState([]);
@@ -31,7 +39,6 @@ export default function App() {
   const [editingId, setEditingId] = useState(null);
   const [collisionWarning, setCollisionWarning] = useState(false);
 
-  // AI 截圖辨識狀態
   const [isParsingAI, setIsParsingAI] = useState(false);
   const [parsedImageResult, setParsedImageResult] = useState(null);
 
@@ -88,7 +95,6 @@ export default function App() {
     setParsedImageResult(null);
   };
 
-  // Gemini AI 截圖辨識邏輯
   const handleImageUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -132,7 +138,6 @@ export default function App() {
     }
   };
 
-  // 帶入 AI 辨識結果至表單
   const applyAiResult = () => {
     if (!parsedImageResult) return;
     setFormData({
@@ -159,8 +164,7 @@ export default function App() {
         const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, '').toLowerCase());
         let nameIdx = headers.findIndex(h => h.includes('name') || h.includes('公司'));
         if (nameIdx === -1) nameIdx = 0;
-        let dateIdx = headers.findIndex(h => h.includes('date') || h.includes('時間') || h.includes('日期'));
-        
+
         const eventsRef = collection(db, 'events');
         for (let i = 1; i < lines.length; i++) {
           if (!lines[i].trim()) continue;
@@ -240,7 +244,7 @@ export default function App() {
         </div>
       </div>
 
-      {/* 新增 Modal (含 AI 上傳與辨識結果) */}
+      {/* 新增 Modal */}
       {showModal && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4">
           <form onSubmit={handleSubmit} className="bg-white border border-slate-900 rounded-2xl p-6 w-full max-w-md space-y-4">
@@ -249,7 +253,6 @@ export default function App() {
               <button type="button" onClick={() => setShowModal(false)}><X className="w-5 h-5" /></button>
             </div>
 
-            {/* AI 截圖辨識入口 */}
             <div className="border-b border-slate-200 pb-3">
               <input
                 type="file"
@@ -322,10 +325,18 @@ export default function App() {
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <label className="block text-xs font-bold mb-1">開始時間</label>
+                {/* 🎯 開始時間連動自動 +1hr 結束時間 */}
                 <input
                   type="time"
                   value={formData.startTime}
-                  onChange={e => setFormData({ ...formData, startTime: e.target.value })}
+                  onChange={e => {
+                    const newStart = e.target.value;
+                    setFormData({
+                      ...formData,
+                      startTime: newStart,
+                      endTime: addOneHour(newStart)
+                    });
+                  }}
                   className="w-full border border-slate-300 rounded-lg p-2 text-sm"
                 />
               </div>
