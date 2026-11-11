@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, collection, onSnapshot, addDoc, updateDoc, doc } from 'firebase/firestore';
-import { Calendar as CalendarIcon, Plus, X, Upload, AlertCircle, Sparkles, Loader2, Check, RotateCcw, Video, FileText, FileEdit } from 'lucide-react';
+import { Calendar as CalendarIcon, Plus, X, Upload, AlertCircle, Sparkles, Loader2, Check, RotateCcw, Video, FileText, FileEdit, BarChart3, Building2, Layers } from 'lucide-react';
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -45,10 +45,14 @@ export default function App() {
   const [editingId, setEditingId] = useState(null);
   const [collisionWarning, setCollisionWarning] = useState(false);
 
-  // 獨立面試紀錄 Modal 狀態
+  // 獨立紀錄 Modal 狀態
   const [showRecordModal, setShowRecordModal] = useState(false);
   const [recordEvent, setRecordEvent] = useState(null);
   const [notesText, setNotesText] = useState('');
+
+  // 統計 Modal 狀態
+  const [showSummaryModal, setShowSummaryModal] = useState(false);
+  const [showCompanyListInSummary, setShowCompanyListInSummary] = useState(false);
 
   const [rangeStartOffset, setRangeStartOffset] = useState(-1);
   const [rangeEndOffset, setRangeEndOffset] = useState(3);
@@ -84,6 +88,31 @@ export default function App() {
       setEvents(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     });
   }, [user]);
+
+  // 計算統計數據
+  const summaryStats = useMemo(() => {
+    const totalInterviews = events.length;
+    const companyMap = new Map();
+    const stageCounts = {};
+
+    events.forEach(ev => {
+      const cleanCompany = ev.company?.trim().toLowerCase();
+      if (cleanCompany) {
+        if (!companyMap.has(cleanCompany)) {
+          companyMap.set(cleanCompany, ev.company.trim());
+        }
+      }
+      const st = ev.stage || '一面';
+      stageCounts[st] = (stageCounts[st] || 0) + 1;
+    });
+
+    return {
+      totalInterviews,
+      totalCompanies: companyMap.size,
+      uniqueCompaniesList: Array.from(companyMap.values()),
+      stageCounts
+    };
+  }, [events]);
 
   const scrollToThisMonth = (behavior = 'smooth') => {
     const container = scrollRef.current;
@@ -248,6 +277,14 @@ export default function App() {
         </div>
 
         <div className="flex items-center gap-2">
+          {/* 統計數據按鈕 */}
+          <button
+            onClick={() => setShowSummaryModal(true)}
+            className="bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200/60 px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-2xs"
+          >
+            <BarChart3 className="w-3.5 h-3.5" /> 統計數據
+          </button>
+
           <button
             onClick={() => scrollToThisMonth()}
             className="bg-slate-100 text-slate-700 hover:bg-slate-200 px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors"
@@ -286,12 +323,10 @@ export default function App() {
                 {year} 年 {month + 1} 月
               </h2>
 
-              {/* 星期 Header */}
               <div className="grid grid-cols-7 mb-2 text-center font-bold text-slate-400 text-[11px] tracking-wider">
                 <div>日</div><div>一</div><div>二</div><div>三</div><div>四</div><div>五</div><div>六</div>
               </div>
 
-              {/* 日曆網格 */}
               <div className="grid grid-cols-7 border-l border-t border-slate-200 bg-slate-200 rounded-2xl overflow-hidden shadow-2xs">
                 {blanks.map(b => (
                   <div key={`b-${b}`} className="bg-slate-50/60 border-r border-b border-slate-200 min-h-[95px] md:min-h-[115px]"></div>
@@ -347,6 +382,74 @@ export default function App() {
           );
         })}
       </div>
+
+      {/* 📊 統計數據儀表板 Modal */}
+      {showSummaryModal && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-lg space-y-5 shadow-xl border border-slate-100">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+              <h3 className="font-bold text-base text-slate-900 flex items-center gap-2">
+                <BarChart3 className="w-5 h-5 text-indigo-600" /> 求職面試統計總結
+              </h3>
+              <button type="button" onClick={() => setShowSummaryModal(false)} className="text-slate-400 hover:text-slate-600 p-1">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                <div className="flex items-center gap-1.5 text-slate-500 text-xs font-bold mb-1">
+                  <Layers className="w-3.5 h-3.5" /> 總面試場次
+                </div>
+                <span className="text-3xl font-black text-slate-900">{summaryStats.totalInterviews} 場</span>
+              </div>
+
+              <div
+                onClick={() => setShowCompanyListInSummary(!showCompanyListInSummary)}
+                className="bg-indigo-50/70 p-4 rounded-2xl border border-indigo-100/80 cursor-pointer hover:bg-indigo-100/70 transition-all"
+              >
+                <div className="flex justify-between items-center mb-1">
+                  <span className="flex items-center gap-1.5 text-indigo-600 text-xs font-bold">
+                    <Building2 className="w-3.5 h-3.5" /> 面試公司數
+                  </span>
+                  <span className="text-[10px] text-indigo-600 font-bold bg-white/80 px-1.5 py-0.5 rounded-md">
+                    {showCompanyListInSummary ? '收起 ▲' : '展開 ▾'}
+                  </span>
+                </div>
+                <span className="text-3xl font-black text-indigo-950">{summaryStats.totalCompanies} 間</span>
+              </div>
+            </div>
+
+            {showCompanyListInSummary && (
+              <div className="bg-indigo-50/40 p-3.5 rounded-2xl border border-indigo-100/60 animate-fadeIn">
+                <div className="text-[11px] font-bold text-indigo-800 mb-2">已應徵面試公司列表：</div>
+                <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto custom-scrollbar">
+                  {summaryStats.uniqueCompaniesList.map((comp, idx) => (
+                    <span key={idx} className="bg-white border border-indigo-200/80 text-indigo-900 text-xs px-2.5 py-1 rounded-xl font-bold shadow-2xs">
+                      {comp}
+                    </span>
+                  ))}
+                  {summaryStats.uniqueCompaniesList.length === 0 && (
+                    <span className="text-xs text-slate-400">尚無公司紀錄</span>
+                  )}
+                </div>
+              </div>
+            )}
+
+            <div>
+              <h4 className="text-xs font-bold text-slate-700 mb-2">面試關卡分佈</h4>
+              <div className="grid grid-cols-2 gap-2">
+                {Object.entries(summaryStats.stageCounts).map(([stage, count]) => (
+                  <div key={stage} className="flex justify-between items-center p-2.5 bg-slate-50 rounded-xl border border-slate-100 text-xs">
+                    <span className="font-semibold text-slate-600">{stage}</span>
+                    <span className="font-bold text-slate-900 bg-white px-2 py-0.5 rounded-md border text-[11px]">{count} 場</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 獨立面試紀錄 Modal */}
       {showRecordModal && recordEvent && (
