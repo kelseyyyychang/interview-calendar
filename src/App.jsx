@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, collection, onSnapshot, addDoc } from 'firebase/firestore';
-import { Calendar as CalendarIcon, Plus, X, Upload, AlertCircle, Sparkles, Loader2, Check, RotateCcw } from 'lucide-react';
+import { Calendar as CalendarIcon, Plus, X, Upload, AlertCircle, Sparkles, Loader2, Check, RotateCcw, Clock, Video } from 'lucide-react';
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -38,7 +38,6 @@ export default function App() {
   const [editingId, setEditingId] = useState(null);
   const [collisionWarning, setCollisionWarning] = useState(false);
 
-  // 日曆雙向無限滾動狀態
   const [rangeStartOffset, setRangeStartOffset] = useState(-1);
   const [rangeEndOffset, setRangeEndOffset] = useState(3);
   const scrollRef = useRef(null);
@@ -73,7 +72,6 @@ export default function App() {
     });
   }, [user]);
 
-  // 平滑滾動回到本月
   const scrollToThisMonth = (behavior = 'smooth') => {
     const container = scrollRef.current;
     const target = document.getElementById('month-0');
@@ -85,7 +83,6 @@ export default function App() {
     }
   };
 
-  // 監聽日曆容器滾動（向下 +3 月、向上 -2 月）
   const handleCalendarScroll = (e) => {
     const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
     if (scrollHeight - scrollTop < clientHeight + 400) {
@@ -213,7 +210,6 @@ export default function App() {
     e.target.value = null;
   };
 
-  // 生成月份列表
   const today = new Date();
   const months = [];
   for (let offset = rangeStartOffset; offset <= rangeEndOffset; offset++) {
@@ -222,19 +218,18 @@ export default function App() {
   }
 
   return (
-    <div className="h-screen flex flex-col bg-white text-slate-900 p-6 font-sans overflow-hidden">
+    <div className="h-screen flex flex-col bg-white text-slate-900 p-4 md:p-6 font-sans overflow-hidden">
       {/* 頁首 Header */}
       <div className="flex justify-between items-center mb-4 flex-shrink-0">
-        <h1 className="text-xl font-bold flex items-center gap-2">
-          <CalendarIcon className="w-6 h-6" /> 面試行事曆 MVP
+        <h1 className="text-lg md:text-xl font-bold flex items-center gap-2">
+          <CalendarIcon className="w-5 h-5 md:w-6 md:h-6" /> 面試行事曆 MVP
         </h1>
         <div className="flex items-center gap-2">
-          {/* 回到本月按鈕 */}
           <button
             onClick={() => scrollToThisMonth()}
-            className="bg-slate-100 text-slate-700 hover:bg-slate-200 px-3 py-2 rounded-xl text-sm font-bold flex items-center gap-1.5 transition-colors"
+            className="bg-slate-100 text-slate-700 hover:bg-slate-200 px-3 py-2 rounded-xl text-xs md:text-sm font-bold flex items-center gap-1.5 transition-colors"
           >
-            <RotateCcw className="w-4 h-4" /> 回到本月
+            <RotateCcw className="w-3.5 h-3.5 md:w-4 md:h-4" /> 回到本月
           </button>
 
           <input
@@ -246,14 +241,14 @@ export default function App() {
           />
           <button
             onClick={() => csvInputRef.current?.click()}
-            className="bg-slate-100 text-slate-700 hover:bg-slate-200 px-3.5 py-2 rounded-xl text-sm font-bold flex items-center gap-1.5 transition-colors"
+            className="bg-slate-100 text-slate-700 hover:bg-slate-200 px-3 py-2 rounded-xl text-xs md:text-sm font-bold flex items-center gap-1.5 transition-colors"
           >
-            <Upload className="w-4 h-4" /> 匯入 Notion CSV
+            <Upload className="w-3.5 h-3.5 md:w-4 md:h-4" /> 匯入 CSV
           </button>
 
           <button
             onClick={() => { setEditingId(null); setParsedImageResult(null); setShowModal(true); }}
-            className="bg-slate-900 text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-1.5"
+            className="bg-slate-900 text-white px-3.5 py-2 rounded-xl text-xs md:text-sm font-bold flex items-center gap-1.5"
           >
             <Plus className="w-4 h-4" /> 新增行程
           </button>
@@ -273,21 +268,29 @@ export default function App() {
           const blanks = Array.from({ length: firstDay }, (_, i) => i);
 
           return (
-            <div key={`${year}-${month}`} id={`month-${offset}`} className="border border-slate-900 rounded-2xl p-4">
-              <h2 className="text-base font-bold mb-3">{year} 年 {month + 1} 月</h2>
-              <div className="grid grid-cols-7 gap-2">
-                {blanks.map(b => <div key={`b-${b}`} className="h-24"></div>)}
+            <div key={`${year}-${month}`} id={`month-${offset}`} className="border border-slate-900 rounded-2xl p-3 md:p-4">
+              <h2 className="text-sm md:text-base font-bold mb-3">{year} 年 {month + 1} 月</h2>
+              <div className="grid grid-cols-7 gap-1.5 md:gap-2">
+                {blanks.map(b => <div key={`b-${b}`} className="h-20 md:h-24"></div>)}
                 {days.map(day => {
                   const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
                   const dayEvents = events.filter(e => e.date === dateStr);
 
                   return (
-                    <div key={day} className="border border-slate-900 rounded-xl p-2 h-24 flex flex-col justify-between">
+                    <div key={day} className="border border-slate-900 rounded-xl p-1.5 md:p-2 h-20 md:h-24 flex flex-col justify-between bg-white">
                       <span className="font-bold text-xs">{day}</span>
+                      {/* 🎯 卡片扁平化重構：簡潔寬單行 + 溢出隱藏 */}
                       <div className="space-y-1 overflow-y-auto">
                         {dayEvents.map(ev => (
-                          <div key={ev.id} className="text-[11px] bg-slate-100 p-1 rounded font-medium truncate">
-                            {ev.startTime} {ev.company}
+                          <div
+                            key={ev.id}
+                            className="text-[10px] p-1 rounded-md border border-slate-200 bg-slate-50 flex flex-col gap-0.5 leading-tight"
+                          >
+                            <div className="flex items-center gap-1 text-slate-500 text-[9px] font-semibold">
+                              <Video className="w-2.5 h-2.5 flex-shrink-0" />
+                              <span className="truncate">{ev.startTime}</span>
+                            </div>
+                            <div className="font-bold text-slate-900 truncate">{ev.company}</div>
                           </div>
                         ))}
                       </div>
@@ -300,13 +303,16 @@ export default function App() {
         })}
       </div>
 
-      {/* 新增 Modal */}
+      {/* 新增 Modal (已加入 max-h-[85vh] 防破版) */}
       {showModal && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
-          <form onSubmit={handleSubmit} className="bg-white border border-slate-900 rounded-2xl p-6 w-full max-w-md space-y-4">
-            <div className="flex justify-between items-center">
-              <h3 className="font-bold">新增面試行程</h3>
-              <button type="button" onClick={() => setShowModal(false)}><X className="w-5 h-5" /></button>
+          <form
+            onSubmit={handleSubmit}
+            className="bg-white border border-slate-900 rounded-2xl p-5 md:p-6 w-full max-w-md space-y-4 max-h-[85vh] overflow-y-auto"
+          >
+            <div className="flex justify-between items-center sticky top-0 bg-white pb-2 border-b border-slate-100 z-10">
+              <h3 className="font-bold text-sm md:text-base">新增面試行程</h3>
+              <button type="button" onClick={() => setShowModal(false)}><X className="w-5 h-5 text-slate-500" /></button>
             </div>
 
             <div className="border-b border-slate-200 pb-3">
@@ -360,9 +366,10 @@ export default function App() {
             )}
 
             <div>
-              <label className="block text-xs font-bold mb-1">公司名稱</label>
+              <label className="block text-xs font-bold mb-1">公司名稱 *</label>
               <input
                 type="text"
+                required
                 value={formData.company}
                 onChange={e => setFormData({ ...formData, company: e.target.value })}
                 className="w-full border border-slate-300 rounded-lg p-2 text-sm"
