@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, collection, onSnapshot, addDoc } from 'firebase/firestore';
-import { Calendar as CalendarIcon, Plus, X, Upload, AlertCircle, Sparkles, Loader2, Check } from 'lucide-react';
+import { Calendar as CalendarIcon, Plus, X, Upload, AlertCircle, Sparkles, Loader2, Check, RotateCcw } from 'lucide-react';
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -24,7 +24,6 @@ const getLocalDateStr = (d) => {
   return `${year}-${month}-${day}`;
 };
 
-// 時間加 1 小時輔助函式
 const addOneHour = (timeStr) => {
   if (!timeStr || !timeStr.includes(':')) return '11:00';
   const [h, m] = timeStr.split(':').map(Number);
@@ -38,6 +37,11 @@ export default function App() {
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [collisionWarning, setCollisionWarning] = useState(false);
+
+  // 日曆雙向無限滾動狀態
+  const [rangeStartOffset, setRangeStartOffset] = useState(-1);
+  const [rangeEndOffset, setRangeEndOffset] = useState(3);
+  const scrollRef = useRef(null);
 
   const [isParsingAI, setIsParsingAI] = useState(false);
   const [parsedImageResult, setParsedImageResult] = useState(null);
@@ -68,6 +72,29 @@ export default function App() {
       setEvents(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     });
   }, [user]);
+
+  // 平滑滾動回到本月
+  const scrollToThisMonth = (behavior = 'smooth') => {
+    const container = scrollRef.current;
+    const target = document.getElementById('month-0');
+    if (container && target) {
+      container.scrollTo({
+        top: target.offsetTop - 20,
+        behavior
+      });
+    }
+  };
+
+  // 監聽日曆容器滾動（向下 +3 月、向上 -2 月）
+  const handleCalendarScroll = (e) => {
+    const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
+    if (scrollHeight - scrollTop < clientHeight + 400) {
+      setRangeEndOffset(prev => prev + 2);
+    }
+    if (scrollTop < 100) {
+      setRangeStartOffset(prev => prev - 2);
+    }
+  };
 
   const checkCollision = (newDate, newStart, newEnd, ignoreId) => {
     const start = new Date(`${newDate}T${newStart}`);
@@ -186,16 +213,30 @@ export default function App() {
     e.target.value = null;
   };
 
-  const days = Array.from({ length: 31 }, (_, i) => i + 1);
+  // 生成月份列表
+  const today = new Date();
+  const months = [];
+  for (let offset = rangeStartOffset; offset <= rangeEndOffset; offset++) {
+    const d = new Date(today.getFullYear(), today.getMonth() + offset, 1);
+    months.push({ offset, year: d.getFullYear(), month: d.getMonth() });
+  }
 
   return (
-    <div className="min-h-screen bg-white text-slate-900 p-6 font-sans">
+    <div className="h-screen flex flex-col bg-white text-slate-900 p-6 font-sans overflow-hidden">
       {/* 頁首 Header */}
-      <div className="flex justify-between items-center mb-6">
+      <div className="flex justify-between items-center mb-4 flex-shrink-0">
         <h1 className="text-xl font-bold flex items-center gap-2">
           <CalendarIcon className="w-6 h-6" /> 面試行事曆 MVP
         </h1>
         <div className="flex items-center gap-2">
+          {/* 回到本月按鈕 */}
+          <button
+            onClick={() => scrollToThisMonth()}
+            className="bg-slate-100 text-slate-700 hover:bg-slate-200 px-3 py-2 rounded-xl text-sm font-bold flex items-center gap-1.5 transition-colors"
+          >
+            <RotateCcw className="w-4 h-4" /> 回到本月
+          </button>
+
           <input
             type="file"
             ref={csvInputRef}
@@ -219,34 +260,49 @@ export default function App() {
         </div>
       </div>
 
-      {/* 1~31 簡約網格 */}
-      <div className="border border-slate-900 rounded-2xl p-4">
-        <div className="grid grid-cols-7 gap-3">
-          {days.map(day => {
-            const dayEvents = events.filter(e => {
-              const d = new Date(e.date);
-              return d.getDate() === day;
-            });
+      {/* 雙向滾動多月份視窗 */}
+      <div
+        ref={scrollRef}
+        onScroll={handleCalendarScroll}
+        className="flex-1 overflow-y-auto space-y-6 pr-1 custom-scrollbar"
+      >
+        {months.map(({ offset, year, month }) => {
+          const daysInMonth = new Date(year, month + 1, 0).getDate();
+          const firstDay = new Date(year, month, 1).getDay();
+          const days = Array.from({ length: daysInMonth }, (_, i) => i + 1);
+          const blanks = Array.from({ length: firstDay }, (_, i) => i);
 
-            return (
-              <div key={day} className="border border-slate-900 rounded-xl p-3 h-28 flex flex-col justify-between">
-                <span className="font-bold text-sm">{day}</span>
-                <div className="space-y-1 overflow-y-auto">
-                  {dayEvents.map(ev => (
-                    <div key={ev.id} className="text-xs bg-slate-100 p-1 rounded font-medium truncate">
-                      {ev.startTime} {ev.company}
+          return (
+            <div key={`${year}-${month}`} id={`month-${offset}`} className="border border-slate-900 rounded-2xl p-4">
+              <h2 className="text-base font-bold mb-3">{year} 年 {month + 1} 月</h2>
+              <div className="grid grid-cols-7 gap-2">
+                {blanks.map(b => <div key={`b-${b}`} className="h-24"></div>)}
+                {days.map(day => {
+                  const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                  const dayEvents = events.filter(e => e.date === dateStr);
+
+                  return (
+                    <div key={day} className="border border-slate-900 rounded-xl p-2 h-24 flex flex-col justify-between">
+                      <span className="font-bold text-xs">{day}</span>
+                      <div className="space-y-1 overflow-y-auto">
+                        {dayEvents.map(ev => (
+                          <div key={ev.id} className="text-[11px] bg-slate-100 p-1 rounded font-medium truncate">
+                            {ev.startTime} {ev.company}
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                  ))}
-                </div>
+                  );
+                })}
               </div>
-            );
-          })}
-        </div>
+            </div>
+          );
+        })}
       </div>
 
       {/* 新增 Modal */}
       {showModal && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
           <form onSubmit={handleSubmit} className="bg-white border border-slate-900 rounded-2xl p-6 w-full max-w-md space-y-4">
             <div className="flex justify-between items-center">
               <h3 className="font-bold">新增面試行程</h3>
@@ -325,7 +381,6 @@ export default function App() {
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <label className="block text-xs font-bold mb-1">開始時間</label>
-                {/* 🎯 開始時間連動自動 +1hr 結束時間 */}
                 <input
                   type="time"
                   value={formData.startTime}
