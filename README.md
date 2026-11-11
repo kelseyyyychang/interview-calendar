@@ -78,7 +78,7 @@ users/
 
 ```bash
 # 複製專案
-git clone [https://github.com/YOUR_USERNAME/YOUR_REPO_NAME.git](https://github.com/YOUR_USERNAME/YOUR_REPO_NAME.git)
+git clone https://github.com/kelseyyyychang/interview-calendar.git
 
 # 安裝依賴
 npm install
