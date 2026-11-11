@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, collection, onSnapshot, addDoc } from 'firebase/firestore';
-import { Calendar as CalendarIcon, Plus, X, Upload, AlertCircle, Sparkles, Loader2, Check, RotateCcw, Clock, Video } from 'lucide-react';
+import { getFirestore, collection, onSnapshot, addDoc, updateDoc, doc } from 'firebase/firestore';
+import { Calendar as CalendarIcon, Plus, X, Upload, AlertCircle, Sparkles, Loader2, Check, RotateCcw, Video, FileText, FileEdit } from 'lucide-react';
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -31,12 +31,24 @@ const addOneHour = (timeStr) => {
   return `${String(newH).padStart(2, '0')}:${String(m || 0).padStart(2, '0')}`;
 };
 
+const getStageColor = (stage) => {
+  if (stage?.includes('HR')) return 'bg-violet-50 text-violet-700 border-violet-200/60';
+  if (stage?.includes('二面')) return 'bg-sky-50 text-sky-700 border-sky-200/60';
+  if (stage?.includes('三面') || stage?.includes('最終')) return 'bg-amber-50 text-amber-700 border-amber-200/60';
+  return 'bg-teal-50 text-teal-700 border-teal-200/60';
+};
+
 export default function App() {
   const [user, setUser] = useState(null);
   const [events, setEvents] = useState([]);
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [collisionWarning, setCollisionWarning] = useState(false);
+
+  // 獨立面試紀錄 Modal 狀態
+  const [showRecordModal, setShowRecordModal] = useState(false);
+  const [recordEvent, setRecordEvent] = useState(null);
+  const [notesText, setNotesText] = useState('');
 
   const [rangeStartOffset, setRangeStartOffset] = useState(-1);
   const [rangeEndOffset, setRangeEndOffset] = useState(3);
@@ -55,7 +67,8 @@ export default function App() {
     endTime: '11:00',
     stage: '一面',
     type: '線上',
-    status: 'confirmed'
+    status: 'confirmed',
+    notes: ''
   });
 
   useEffect(() => {
@@ -115,8 +128,21 @@ export default function App() {
     if (!formData.company.trim()) return;
     await addDoc(collection(db, 'events'), formData);
     setShowModal(false);
-    setFormData({ ...formData, company: '' });
+    setFormData({ ...formData, company: '', notes: '' });
     setParsedImageResult(null);
+  };
+
+  const openRecordModal = (ev) => {
+    setRecordEvent(ev);
+    setNotesText(ev.notes || '');
+    setShowRecordModal(true);
+  };
+
+  const handleSaveRecord = async () => {
+    if (!recordEvent) return;
+    await updateDoc(doc(db, 'events', recordEvent.id), { notes: notesText });
+    setShowRecordModal(false);
+    setRecordEvent(null);
   };
 
   const handleImageUpload = async (e) => {
@@ -139,20 +165,14 @@ export default function App() {
       const response = await fetch('/api/gemini', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt,
-          image: base64Image,
-          mimeType: file.type || 'image/jpeg',
-        }),
+        body: JSON.stringify({ prompt, image: base64Image, mimeType: file.type || 'image/jpeg' }),
       });
 
       if (!response.ok) throw new Error('AI Parse Error');
-
       const data = await response.json();
       let aiText = data.text || '';
       aiText = aiText.replace(/```json/g, '').replace(/```/g, '').trim();
-      const parsedData = JSON.parse(aiText);
-      setParsedImageResult(parsedData);
+      setParsedImageResult(JSON.parse(aiText));
 
     } catch (error) {
       console.error("AI 讀取失敗", error);
@@ -177,14 +197,12 @@ export default function App() {
   const handleCsvImport = (e) => {
     const file = e.target.files[0];
     if (!file) return;
-
     const reader = new FileReader();
     reader.onload = async (event) => {
       try {
         const text = event.target.result;
         const lines = text.split('\n');
         if (lines.length < 2) return;
-
         const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, '').toLowerCase());
         let nameIdx = headers.findIndex(h => h.includes('name') || h.includes('公司'));
         if (nameIdx === -1) nameIdx = 0;
@@ -201,7 +219,8 @@ export default function App() {
             endTime: '11:00',
             stage: '一面',
             type: '線上',
-            status: 'confirmed'
+            status: 'confirmed',
+            notes: ''
           });
         }
       } catch (err) { console.error(err); }
@@ -218,37 +237,35 @@ export default function App() {
   }
 
   return (
-    <div className="h-screen flex flex-col bg-white text-slate-900 p-4 md:p-6 font-sans overflow-hidden">
+    <div className="h-screen flex flex-col bg-[#fafbfc] text-slate-900 font-sans antialiased overflow-hidden">
       {/* 頁首 Header */}
-      <div className="flex justify-between items-center mb-4 flex-shrink-0">
-        <h1 className="text-lg md:text-xl font-bold flex items-center gap-2">
-          <CalendarIcon className="w-5 h-5 md:w-6 md:h-6" /> 面試行事曆 MVP
-        </h1>
+      <div className="flex justify-between items-center px-4 md:px-6 py-3.5 bg-white border-b border-slate-200/80 shadow-2xs flex-shrink-0">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-xl bg-slate-900 text-white flex items-center justify-center shadow-xs">
+            <CalendarIcon className="w-4 h-4" />
+          </div>
+          <h1 className="text-base md:text-lg font-bold text-slate-900 tracking-tight">面試行事曆</h1>
+        </div>
+
         <div className="flex items-center gap-2">
           <button
             onClick={() => scrollToThisMonth()}
-            className="bg-slate-100 text-slate-700 hover:bg-slate-200 px-3 py-2 rounded-xl text-xs md:text-sm font-bold flex items-center gap-1.5 transition-colors"
+            className="bg-slate-100 text-slate-700 hover:bg-slate-200 px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors"
           >
-            <RotateCcw className="w-3.5 h-3.5 md:w-4 md:h-4" /> 回到本月
+            <RotateCcw className="w-3.5 h-3.5" /> 回到本月
           </button>
 
-          <input
-            type="file"
-            ref={csvInputRef}
-            accept=".csv"
-            onChange={handleCsvImport}
-            className="hidden"
-          />
+          <input type="file" ref={csvInputRef} accept=".csv" onChange={handleCsvImport} className="hidden" />
           <button
             onClick={() => csvInputRef.current?.click()}
-            className="bg-slate-100 text-slate-700 hover:bg-slate-200 px-3 py-2 rounded-xl text-xs md:text-sm font-bold flex items-center gap-1.5 transition-colors"
+            className="bg-slate-100 text-slate-700 hover:bg-slate-200 px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors"
           >
-            <Upload className="w-3.5 h-3.5 md:w-4 md:h-4" /> 匯入 CSV
+            <Upload className="w-3.5 h-3.5" /> 匯入 CSV
           </button>
 
           <button
             onClick={() => { setEditingId(null); setParsedImageResult(null); setShowModal(true); }}
-            className="bg-slate-900 text-white px-3.5 py-2 rounded-xl text-xs md:text-sm font-bold flex items-center gap-1.5"
+            className="bg-slate-900 text-white px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 hover:bg-slate-800 transition-all shadow-xs"
           >
             <Plus className="w-4 h-4" /> 新增行程
           </button>
@@ -256,11 +273,7 @@ export default function App() {
       </div>
 
       {/* 雙向滾動多月份視窗 */}
-      <div
-        ref={scrollRef}
-        onScroll={handleCalendarScroll}
-        className="flex-1 overflow-y-auto space-y-6 pr-1 custom-scrollbar"
-      >
+      <div ref={scrollRef} onScroll={handleCalendarScroll} className="flex-1 overflow-y-auto p-4 md:p-6 space-y-8 custom-scrollbar">
         {months.map(({ offset, year, month }) => {
           const daysInMonth = new Date(year, month + 1, 0).getDate();
           const firstDay = new Date(year, month, 1).getDay();
@@ -268,29 +281,61 @@ export default function App() {
           const blanks = Array.from({ length: firstDay }, (_, i) => i);
 
           return (
-            <div key={`${year}-${month}`} id={`month-${offset}`} className="border border-slate-900 rounded-2xl p-3 md:p-4">
-              <h2 className="text-sm md:text-base font-bold mb-3">{year} 年 {month + 1} 月</h2>
-              <div className="grid grid-cols-7 gap-1.5 md:gap-2">
-                {blanks.map(b => <div key={`b-${b}`} className="h-20 md:h-24"></div>)}
+            <div key={`${year}-${month}`} id={`month-${offset}`} className="max-w-6xl mx-auto">
+              <h2 className="text-sm md:text-base font-extrabold text-slate-900 mb-3 px-1">
+                {year} 年 {month + 1} 月
+              </h2>
+
+              {/* 星期 Header */}
+              <div className="grid grid-cols-7 mb-2 text-center font-bold text-slate-400 text-[11px] tracking-wider">
+                <div>日</div><div>一</div><div>二</div><div>三</div><div>四</div><div>五</div><div>六</div>
+              </div>
+
+              {/* 日曆網格 */}
+              <div className="grid grid-cols-7 border-l border-t border-slate-200 bg-slate-200 rounded-2xl overflow-hidden shadow-2xs">
+                {blanks.map(b => (
+                  <div key={`b-${b}`} className="bg-slate-50/60 border-r border-b border-slate-200 min-h-[95px] md:min-h-[115px]"></div>
+                ))}
                 {days.map(day => {
                   const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
                   const dayEvents = events.filter(e => e.date === dateStr);
+                  const isToday = getLocalDateStr(new Date()) === dateStr;
 
                   return (
-                    <div key={day} className="border border-slate-900 rounded-xl p-1.5 md:p-2 h-20 md:h-24 flex flex-col justify-between bg-white">
-                      <span className="font-bold text-xs">{day}</span>
-                      {/* 🎯 卡片扁平化重構：簡潔寬單行 + 溢出隱藏 */}
-                      <div className="space-y-1 overflow-y-auto">
+                    <div
+                      key={day}
+                      className={`border-r border-b border-slate-200 p-1.5 md:p-2 min-h-[95px] md:min-h-[115px] flex flex-col transition-colors ${isToday ? 'bg-indigo-50/50' : 'bg-white'}`}
+                    >
+                      <div className="flex justify-between items-center mb-1">
+                        <span className={`w-5 h-5 md:w-6 md:h-6 flex items-center justify-center rounded-full text-[11px] md:text-xs font-bold ${isToday ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-800'}`}>
+                          {day}
+                        </span>
+                      </div>
+
+                      <div className="space-y-1 overflow-y-auto flex-1 custom-scrollbar">
                         {dayEvents.map(ev => (
                           <div
                             key={ev.id}
-                            className="text-[10px] p-1 rounded-md border border-slate-200 bg-slate-50 flex flex-col gap-0.5 leading-tight"
+                            className="text-[10px] p-1.5 rounded-xl border border-slate-200/80 bg-white shadow-2xs hover:border-slate-300 transition-all flex flex-col gap-0.5"
                           >
-                            <div className="flex items-center gap-1 text-slate-500 text-[9px] font-semibold">
-                              <Video className="w-2.5 h-2.5 flex-shrink-0" />
-                              <span className="truncate">{ev.startTime}</span>
+                            <div className="flex items-center justify-between text-slate-500 text-[9px] font-semibold">
+                              <span className="flex items-center gap-1 truncate">
+                                <Video className="w-2.5 h-2.5 flex-shrink-0 text-slate-400" />
+                                {ev.startTime}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => openRecordModal(ev)}
+                                className="text-indigo-600 hover:text-indigo-800 p-0.5"
+                                title="編輯面試紀錄"
+                              >
+                                <FileEdit className="w-2.5 h-2.5" />
+                              </button>
                             </div>
-                            <div className="font-bold text-slate-900 truncate">{ev.company}</div>
+                            <div className="font-bold text-slate-900 truncate leading-tight">{ev.company}</div>
+                            <span className={`self-start text-[8px] px-1.5 py-0.5 rounded-md border font-semibold mt-0.5 ${getStageColor(ev.stage)}`}>
+                              {ev.stage || '一面'}
+                            </span>
                           </div>
                         ))}
                       </div>
@@ -303,38 +348,65 @@ export default function App() {
         })}
       </div>
 
-      {/* 新增 Modal (已加入 max-h-[85vh] 防破版) */}
-      {showModal && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
-          <form
-            onSubmit={handleSubmit}
-            className="bg-white border border-slate-900 rounded-2xl p-5 md:p-6 w-full max-w-md space-y-4 max-h-[85vh] overflow-y-auto"
-          >
-            <div className="flex justify-between items-center sticky top-0 bg-white pb-2 border-b border-slate-100 z-10">
-              <h3 className="font-bold text-sm md:text-base">新增面試行程</h3>
-              <button type="button" onClick={() => setShowModal(false)}><X className="w-5 h-5 text-slate-500" /></button>
+      {/* 獨立面試紀錄 Modal */}
+      {showRecordModal && recordEvent && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md space-y-4 shadow-xl border border-slate-100">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+              <div>
+                <h3 className="font-bold text-sm text-slate-900 flex items-center gap-1.5">
+                  <FileText className="w-4 h-4 text-indigo-600" /> 面試紀錄與筆記
+                </h3>
+                <p className="text-[11px] text-slate-500 mt-0.5">{recordEvent.company} · {recordEvent.date}</p>
+              </div>
+              <button type="button" onClick={() => setShowRecordModal(false)} className="text-slate-400 hover:text-slate-600 p-1">
+                <X className="w-4 h-4" />
+              </button>
             </div>
 
-            <div className="border-b border-slate-200 pb-3">
-              <input
-                type="file"
-                ref={imageInputRef}
-                onChange={handleImageUpload}
-                accept="image/*"
-                className="hidden"
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">檢討筆記 / 面試考題 / Follow-up 備忘錄</label>
+              <textarea
+                rows={5}
+                value={notesText}
+                onChange={e => setNotesText(e.target.value)}
+                className="w-full border border-slate-200 rounded-xl p-3 text-xs outline-none focus:ring-2 focus:ring-slate-900 bg-slate-50 focus:bg-white"
+                placeholder="記錄面試官問的問題、薪資範圍或需改進的地方..."
               />
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+              <button type="button" onClick={() => setShowRecordModal(false)} className="px-4 py-2 text-xs font-bold text-slate-600 bg-slate-100 rounded-xl hover:bg-slate-200">取消</button>
+              <button type="button" onClick={handleSaveRecord} className="px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800">儲存筆記</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 新增 / 編輯 Modal */}
+      {showModal && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <form onSubmit={handleSubmit} className="bg-white rounded-2xl p-6 w-full max-w-md space-y-4 shadow-xl border border-slate-100 max-h-[85vh] overflow-y-auto">
+            <div className="flex justify-between items-center sticky top-0 bg-white pb-2 border-b border-slate-100 z-10">
+              <h3 className="font-bold text-sm text-slate-900">新增面試行程</h3>
+              <button type="button" onClick={() => setShowModal(false)} className="text-slate-400 hover:text-slate-600 p-1">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="border-b border-slate-100 pb-3">
+              <input type="file" ref={imageInputRef} onChange={handleImageUpload} accept="image/*" className="hidden" />
               <button
                 type="button"
                 onClick={() => imageInputRef.current?.click()}
-                className="w-full py-2 border-2 border-dashed border-slate-300 rounded-xl text-slate-700 font-bold hover:bg-slate-50 transition-all flex items-center justify-center gap-2 text-xs"
+                className="w-full py-2.5 border border-dashed border-indigo-200 bg-indigo-50/50 rounded-xl text-indigo-700 font-bold hover:bg-indigo-50 transition-all flex items-center justify-center gap-2 text-xs"
               >
                 <Sparkles className="w-4 h-4 text-indigo-600" /> 上傳面試信件截圖 (AI 自動填寫)
               </button>
 
               {isParsingAI && (
                 <div className="mt-2 p-2 bg-slate-100 rounded-lg flex items-center gap-2 text-xs text-slate-600 animate-pulse font-medium">
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  <span>正在解析截圖內容...</span>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" /> 正在解析截圖內容...
                 </div>
               )}
 
@@ -347,13 +419,7 @@ export default function App() {
                     <p>公司：<span className="font-bold text-slate-900">{parsedImageResult.company || '未找到'}</span></p>
                     <p>時間：<span className="font-bold text-slate-900">{parsedImageResult.date} {parsedImageResult.startTime} - {parsedImageResult.endTime}</span></p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={applyAiResult}
-                    className="w-full py-1.5 bg-emerald-600 text-white rounded-lg font-bold hover:bg-emerald-700 transition-colors"
-                  >
-                    帶入表單
-                  </button>
+                  <button type="button" onClick={applyAiResult} className="w-full py-1.5 bg-emerald-600 text-white rounded-lg font-bold hover:bg-emerald-700">帶入表單</button>
                 </div>
               )}
             </div>
@@ -366,28 +432,45 @@ export default function App() {
             )}
 
             <div>
-              <label className="block text-xs font-bold mb-1">公司名稱 *</label>
+              <label className="block text-xs font-bold text-slate-700 mb-1">公司名稱 *</label>
               <input
                 type="text"
                 required
                 value={formData.company}
                 onChange={e => setFormData({ ...formData, company: e.target.value })}
-                className="w-full border border-slate-300 rounded-lg p-2 text-sm"
+                className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs bg-slate-50/50 focus:bg-white focus:ring-2 focus:ring-slate-900 outline-none"
                 placeholder="例如：Google"
               />
             </div>
-            <div>
-              <label className="block text-xs font-bold mb-1">日期</label>
-              <input
-                type="date"
-                value={formData.date}
-                onChange={e => setFormData({ ...formData, date: e.target.value })}
-                className="w-full border border-slate-300 rounded-lg p-2 text-sm"
-              />
-            </div>
+
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <label className="block text-xs font-bold mb-1">開始時間</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">日期</label>
+                <input
+                  type="date"
+                  value={formData.date}
+                  onChange={e => setFormData({ ...formData, date: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs bg-slate-50/50"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">關卡</label>
+                <select
+                  value={formData.stage}
+                  onChange={e => setFormData({ ...formData, stage: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs bg-slate-50/50"
+                >
+                  <option value="HR Call">HR Call</option>
+                  <option value="一面">一面</option>
+                  <option value="二面">二面</option>
+                  <option value="三面 / 最終面">三面 / 最終面</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">開始時間</label>
                 <input
                   type="time"
                   value={formData.startTime}
@@ -399,20 +482,24 @@ export default function App() {
                       endTime: addOneHour(newStart)
                     });
                   }}
-                  className="w-full border border-slate-300 rounded-lg p-2 text-sm"
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs bg-slate-50/50"
                 />
               </div>
               <div>
-                <label className="block text-xs font-bold mb-1">結束時間</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">結束時間</label>
                 <input
                   type="time"
                   value={formData.endTime}
                   onChange={e => setFormData({ ...formData, endTime: e.target.value })}
-                  className="w-full border border-slate-300 rounded-lg p-2 text-sm"
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs bg-slate-50/50"
                 />
               </div>
             </div>
-            <button type="submit" className="w-full bg-slate-900 text-white py-2 rounded-xl text-sm font-bold">儲存</button>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+              <button type="button" onClick={() => setShowModal(false)} className="px-4 py-2 text-xs font-bold text-slate-600 bg-slate-100 rounded-xl hover:bg-slate-200">取消</button>
+              <button type="submit" className="px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800">儲存</button>
+            </div>
           </form>
         </div>
       )}
